@@ -1,0 +1,63 @@
+name: Build APK (from zip)
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-pip python3-venv git zip unzip openjdk-17-jdk \
+            build-essential ccache \
+            libffi-dev libssl-dev zlib1g-dev \
+            autoconf automake libtool pkg-config \
+            libjpeg-dev libpng-dev
+
+      - name: Install Buildozer
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install buildozer cython
+
+      - name: Unzip project
+        run: |
+          rm -rf work
+          mkdir -p work
+          unzip -q nro_online.zip -d work
+          echo "=== After unzip (preview) ==="
+          find work -maxdepth 3 -type f | head -n 60
+
+      - name: Locate main.py and build
+        run: |
+          set -e
+          MAIN_PATH="$(find work -type f -name 'main.py' | head -n 1)"
+          if [ -z "$MAIN_PATH" ]; then
+            echo "❌ Không tìm thấy main.py sau khi unzip"
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$MAIN_PATH")"
+          echo "✅ main.py = $MAIN_PATH"
+          echo "✅ PROJECT_DIR = $PROJECT_DIR"
+
+          # buildozer.spec phải nằm cạnh main.py để buildozer chạy đúng
+          if [ ! -f "$PROJECT_DIR/buildozer.spec" ]; then
+            cp buildozer.spec "$PROJECT_DIR/buildozer.spec"
+          fi
+
+          cd "$PROJECT_DIR"
+          python3 -m compileall -q -f .
+          buildozer -v android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: |
+            work/**/bin/*.apk
